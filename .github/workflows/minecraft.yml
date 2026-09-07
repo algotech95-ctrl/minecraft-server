@@ -1,0 +1,102 @@
+name: Minecraft Server
+
+on:
+  workflow_dispatch:
+
+jobs:
+  minecraft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+
+    steps:
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq
+
+      - name: Install Java 25
+        run: |
+          sudo apt-get install -y openjdk-25-jre-headless
+          java -version
+
+      - name: Create server
+        run: |
+          mkdir -p minecraft/plugins
+          cd minecraft
+
+          USER_AGENT="github-actions-minecraft-server/1.0"
+
+          BUILDS=$(curl -fsSL \
+            -H "User-Agent: $USER_AGENT" \
+            "https://fill.papermc.io/v3/projects/paper/versions/26.2/builds")
+
+          PAPER_URL=$(echo "$BUILDS" | jq -r '
+            first(
+              .[]
+              | select(.channel == "STABLE")
+              | .downloads."server:default".url
+            )
+          ')
+
+          if [ "$PAPER_URL" = "null" ] || [ -z "$PAPER_URL" ]; then
+            echo "Could not find a stable Paper build."
+            exit 1
+          fi
+
+          echo "Downloading:"
+          echo "$PAPER_URL"
+
+          curl -fL \
+            -H "User-Agent: $USER_AGENT" \
+            "$PAPER_URL" \
+            -o paper.jar
+
+      - name: Accept EULA
+        run: |
+          cd minecraft
+          echo "eula=true" > eula.txt
+
+      - name: Server configuration
+        run: |
+          cd minecraft
+
+          cat > server.properties << 'EOF'
+          server-port=25565
+          server-ip=
+          online-mode=true
+          motd=My Minecraft Server
+          max-players=10
+          view-distance=8
+          simulation-distance=6
+          difficulty=normal
+          gamemode=survival
+          spawn-protection=0
+          enable-command-block=false
+          EOF
+
+      - name: Download Geyser
+        run: |
+          cd minecraft/plugins
+
+          curl -fL \
+            "https://api.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/Geyser-Spigot.jar" \
+            -o Geyser-Spigot.jar
+
+      - name: Download Floodgate
+        run: |
+          cd minecraft/plugins
+
+          curl -fL \
+            "https://api.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/floodgate-spigot.jar" \
+            -o floodgate-spigot.jar
+
+      - name: Start Minecraft
+        run: |
+          cd minecraft
+
+          java \
+            -Xms2G \
+            -Xmx6G \
+            -jar paper.jar \
+            --nogui
